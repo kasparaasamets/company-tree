@@ -8,5 +8,7 @@ module.exports = {
     database: 'taxify-test',
     connectionLimit: 10
   },
-  maxRequestedCompanies: 100
+  maxRequestedCompanies: 100,
+  maxRequestedCompanyCars: 100,
+  maxRequestedCompanyDrivers: 100
 };

@@ -3,6 +3,8 @@ var mysql = require('mysql');
 var pool = mysql.createPool(config.db);
 
 module.exports = {
+
+  // Execute a query
   query: function(sql, params, cb) {
     if (typeof params === 'function') {
       cb = params;
@@ -19,5 +21,18 @@ module.exports = {
         if (error) throw error;
       });
     });
+  },
+
+  // Generate a limit/offset string for query
+  makeLimit: function(limit, offset, maxLimit) {
+    if (!limit || limit > maxLimit) {
+      limit = maxLimit;
+    }
+    var result = ' LIMIT ' + limit;
+    if (offset) {
+      result += ' OFFSET ' + offset;
+    }
+    return result;
   }
+
 };

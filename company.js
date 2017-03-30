@@ -4,81 +4,36 @@ var Seq = require('seq');
 var config = require('./config');
 
 function getCompanyTree(params, cb) {
-  var mappedCompanies = {};
-  var companyLimit = '';
-  var companyCarsLimit = '';
-  var companyDriversLimit = '';
-
-  var companyIds = [];
+  var companyLimit = db.makeLimit(params.companiesLimit, params.companiesOffset, config.maxRequestedCompanies);
+  var companyCarsLimit = db.makeLimit(params.companyCarsLimit, null, config.maxRequestedCompanyCars);
+  var companyDriversLimit = db.makeLimit(params.companyDriversLimit, null, config.maxRequestedCompanyDrivers);
   var companies;
 
-  if (!params.companiesLimit || params.companiesLimit > config.maxRequestedCompanies) {
-    params.companiesLimit = config.maxRequestedCompanies;
-  }
-
-  companyLimit = ' LIMIT ' + params.companiesLimit;
-  if (params.companiesOffset) {
-    companyLimit += ' OFFSET ' + params.companiesOffset;
-  }
-  if (params.companyCarsLimit) {
-    companyCarsLimit = ' LIMIT ' + params.companyCarsLimit;
-  }
-  if (params.companyDriversLimit) {
-    companyDriversLimit = ' LIMIT ' + params.companyDriversLimit;
-  }
   Seq().seq(function() {
     db.query('SELECT * FROM company' + companyLimit, this);
   }).seq(function(results) {
     companies = results;
-
-
-    // Map companies to object with ID as key for faster car and driver mapping
-    for (var i in companies) {
-      var company = companies[i];
-      mappedCompanies[company.id] = company;
-      companyIds.push(company.id);
-    }
-    this();
-  }).par(function() {
-    db.query('SELECT * FROM car WHERE company_id IN (' + companyIds.join(',') + ')', this);
-  }).par(function() {
-    db.query('SELECT * FROM driver WHERE company_id IN (' + companyIds.join(',') + ')', this);
-  }).seq(function(cars, drivers) {
-
-    // Fill in company cars
-    for (var i in cars) {
-      var car = cars[i];
-      console.log('car', car);
-      var company = mappedCompanies[car.company_id];
-      if (!company) {
-        continue;
-      }
-      if (!company.cars) {
-        company.cars = [];
-      }
-      company.cars.push(car);
-    }
-
-    // Fill in company drivers
-    for (var i in drivers) {
-      var driver = drivers[i];
-      var company = mappedCompanies[driver.company_id];
-      if (!company) {
-        continue;
-      }
-      if (!company.drivers) {
-        company.drivers = [];
-      }
-      company.drivers.push(driver);
-    }
-
-    // Re-flatten companies to array for proper output
-    var flattenedCompanies = [];
-    for (var i in companies) {
-      flattenedCompanies.push(companies[i]);
-    }
-    cb(null, flattenedCompanies);
-
+    this(null, companies);
+  }).flatten().seqEach(function(company) {
+    var that = this;
+    // Fill in all cars and drivers for this company.
+    // I'm using two queries per company as I was unable to find an optimal SQL solution
+    // when getting a subset of each company's cars/drivers.
+    Seq().par(function() {
+      var sql = 'SELECT * FROM car WHERE `company_id` = ?' + companyCarsLimit;
+      var params = [company.id];
+      db.query(sql, params, this);
+    }).par(function() {
+      var sql = 'SELECT * FROM driver WHERE `company_id` = ?' + companyDriversLimit;
+      var params = [company.id];
+      db.query(sql, params, this);
+    }).seq(function(cars, drivers) {
+      company.cars = cars;
+      company.drivers = drivers;
+      that();
+    });
+  }).seq(function() {
+    cb(null, companies);
   });
 }
 
@@ -86,6 +41,8 @@ module.exports = function () {
   var app = express();
 
   app.get('/tree', function (req, res, next) {
+
+    // Need a proper input validation here, e.g. express-validator
 
     var params = {
       companiesOffset: req.query.companiesOffset,
