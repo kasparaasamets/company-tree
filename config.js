@@ -7,5 +7,6 @@ module.exports = {
     password: '123456',
     database: 'taxify-test',
     connectionLimit: 10
-  }
+  },
+  maxRequestedCompanies: 100
 };
